@@ -64,6 +64,11 @@ def run_physics_simulation(angle, duration, power, mass):
             
         t += dt
 
+    # CRITICAL FIX: If rocket crashed or flew directly out of orbit bounds instantly,
+    # reset infinity to zero to protect the downstream TensorFlow optimization nodes
+    if min_altitude == float('inf'):
+        min_altitude = 0.0
+
     # To be stable, periapsis must be > 150km (150,000m) and not crashed
     stable_orbit = 1 if (min_altitude > 150000 and not crashed) else 0
     
