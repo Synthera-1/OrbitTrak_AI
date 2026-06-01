@@ -4,16 +4,13 @@ import tensorflow as tf
 import pickle
 import plotly.graph_objects as go
 
-# --- 1. Page Configuration & Theme Settings ---
 st.set_page_config(page_title="OrbitTrak AI Lab", layout="wide")
 st.title("OrbitTrak AI: Neural Flight Computer & Trajectory Predictor")
 st.markdown("---")
 
-# --- 2. Safe Asset Ingestion Engine ---
 @st.cache_resource
 def load_flight_assets():
-    # Load directly from the model directory structure
-    nn_model = tf.keras.models.load_model('orbit_predictor_model')
+    nn_model = tf.keras.models.load_model('orbit_predictor_model.h5')
     with open('scaler.pkl', 'rb') as f:
         data_scaler = pickle.load(f)
     return nn_model, data_scaler
@@ -21,33 +18,35 @@ def load_flight_assets():
 try:
     model, scaler = load_flight_assets()
 except Exception as e:
-    st.error("System Core Error: Critical Assets Missing. Run your scripts in the terminal first.")
+    st.error("System Core Error: Critical Assets Missing. Run train_model.py in your terminal first.")
     st.stop()
 
-# --- 3. Dashboard Interface Architecture ---
 col_inputs, col_viz = st.columns([1, 1.3], gap="large")
 
 with col_inputs:
     st.header("Flight Control Parameters")
-    angle = st.slider("Launch Pitch Vector Angle (°)", min_value=10.0, max_value=90.0, value=45.0, step=0.5)
-    duration = st.slider("Main Booster Burn Window Duration (s)", min_value=20.0, max_value=180.0, value=90.0, step=1.0)
-    power = st.slider("Engine Core Thrust Execution Power (kN)", min_value=200.0, max_value=1200.0, value=600.0, step=10.0)
-    mass = st.slider("Total Spacecraft Wet Structural Mass (kg)", min_value=800.0, max_value=4000.0, value=2000.0, step=50.0)
+    angle = st.slider("Launch Pitch Vector Angle (°)", 10.0, 90.0, 45.0, 0.5)
+    duration = st.slider("Main Booster Burn Window Duration (s)", 20.0, 180.0, 90.0, 1.0)
+    power = st.slider("Engine Core Thrust Execution Power (kN)", 200.0, 1200.0, 600.0, 10.0)
+    mass = st.slider("Total Spacecraft Wet Structural Mass (kg)", 800.0, 4000.0, 2000.0, 50.0)
     
     st.markdown("---")
     st.header("AI Live Diagnostic Readout")
     
-    # --- 4. Live Model Inference Processing ---
     input_vector = np.array([[angle, duration, power, mass]])
     scaled_vector = scaler.transform(input_vector)
     
     predictions = model.predict(scaled_vector, verbose=0)
     predicted_log_heights = predictions[0]  
-    predicted_stability = predictions[1]  
+    predicted_stability = predictions[1][0]  
     
-    # INVERSE DECODER TRANSFORMATION: Decompress log values into real metrics
-    pred_apo = (10 ** float(predicted_log_heights[0][0])) / 1000.0
-    pred_peri = (10 ** float(predicted_log_heights[0][1])) / 1000.0
+    # REVERSE LOG DECODER MATCH: Converts log values cleanly back to true physical kilometers
+    pred_apo = (10 ** float(predicted_log_heights[0])) - 1.0
+    pred_peri = (10 ** float(predicted_log_heights[1])) - 1.0
+    
+    # Catch structural negative errors
+    pred_apo = max(0.0, pred_apo)
+    pred_peri = max(0.0, pred_peri)
     
     metric_col1, metric_col2 = st.columns(2)
     with metric_col1:
@@ -55,10 +54,10 @@ with col_inputs:
     with metric_col2:
         st.metric(label="Predicted Periapsis Altitude", value=f"{pred_peri:.2f} km")
         
-    if float(predicted_stability[0][0]) >= 0.5:
-        st.success(f"Stable Orbit Confirmed (Confidence: {float(predicted_stability[0][0]) * 100:.1f}%)")
+    if float(predicted_stability) >= 0.5:
+        st.success(f"Stable Orbit Confirmed (Confidence: {float(predicted_stability) * 100:.1f}%)")
     else:
-        st.error(f"Trajectory Alert: Collision Risk (Stability Metric: {float(predicted_stability[0][0]) * 100:.1f}%)")
+        st.error(f"Trajectory Alert: Collision Risk (Stability Metric: {float(predicted_stability) * 100:.1f}%)")
 
 with col_viz:
     st.header("Interactive Flight Path Projection")
@@ -71,6 +70,7 @@ with col_viz:
     atmo_x = R_ATMOSPHERE_KM * np.cos(theta)
     atmo_y = R_ATMOSPHERE_KM * np.sin(theta)
     
+    # Bound map sizing constraints
     apo_radius_km = min(30000.0, pred_apo) + R_EARTH_KM
     peri_radius_km = min(30000.0, pred_peri) + R_EARTH_KM
     
