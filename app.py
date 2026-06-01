@@ -4,23 +4,26 @@ import tensorflow as tf
 import pickle
 import plotly.graph_objects as go
 
+# --- 1. Page Configuration & Theme Settings ---
 st.set_page_config(page_title="OrbitTrak AI Lab", layout="wide")
 st.title("OrbitTrak AI: Neural Flight Computer & Trajectory Predictor")
 st.markdown("---")
 
+# --- 2. Safe Asset Ingestion Engine ---
 @st.cache_resource
 def load_flight_assets():
     nn_model = tf.keras.models.load_model('orbit_predictor_model.h5')
     with open('scaler.pkl', 'rb') as f:
-        data_scaler = pickle.load(f)
-    return nn_model, data_scaler
+        data_scalers = pickle.load(f)
+    return nn_model, data_scalers
 
 try:
-    model, scaler = load_flight_assets()
+    model, scalers = load_flight_assets()
 except Exception as e:
     st.error("System Core Error: Critical Assets Missing. Run train_model.py in your terminal first.")
     st.stop()
 
+# --- 3. Dashboard Interface Architecture ---
 col_inputs, col_viz = st.columns([1, 1.3], gap="large")
 
 with col_inputs:
@@ -33,18 +36,27 @@ with col_inputs:
     st.markdown("---")
     st.header("AI Live Diagnostic Readout")
     
+    # --- 4. Live Model Inference Processing ---
     input_vector = np.array([[angle, duration, power, mass]])
-    scaled_vector = scaler.transform(input_vector)
     
+    # Extract structural components from your dictionary wrapper
+    feature_scaler = scalers['feature_scaler']
+    target_scaler = scalers['target_scaler']
+    
+    # Normalize control arrays
+    scaled_vector = feature_scaler.transform(input_vector)
+    
+    # Execute structural predictions across multi-headed nodes
     predictions = model.predict(scaled_vector, verbose=0)
-    predicted_log_heights = predictions[0]  
-    predicted_stability = predictions[1][0]  
+    scaled_heights = predictions[0]  
+    predicted_stability = predictions[1]  
     
-    # REVERSE LOG DECODER MATCH: Converts log values cleanly back to true physical kilometers
-    pred_apo = (10 ** float(predicted_log_heights[0])) - 1.0
-    pred_peri = (10 ** float(predicted_log_heights[1])) - 1.0
+    # INVERSE DECODER TRANSFORMATION: Maps scaled 0.0-1.0 results back to normal Kilometers
+    raw_heights = target_scaler.inverse_transform(scaled_heights)
+    pred_apo = float(raw_heights[0][0])
+    pred_peri = float(raw_heights[0][1])
     
-    # Catch structural negative errors
+    # Boundaries to protect layouts from mathematical anomalies
     pred_apo = max(0.0, pred_apo)
     pred_peri = max(0.0, pred_peri)
     
@@ -54,10 +66,10 @@ with col_inputs:
     with metric_col2:
         st.metric(label="Predicted Periapsis Altitude", value=f"{pred_peri:.2f} km")
         
-    if float(predicted_stability) >= 0.5:
-        st.success(f"Stable Orbit Confirmed (Confidence: {float(predicted_stability) * 100:.1f}%)")
+    if float(predicted_stability[0][0]) >= 0.5:
+        st.success(f"Stable Orbit Confirmed (Confidence: {float(predicted_stability[0][0]) * 100:.1f}%)")
     else:
-        st.error(f"Trajectory Alert: Collision Risk (Stability Metric: {float(predicted_stability) * 100:.1f}%)")
+        st.error(f"Trajectory Alert: Collision Risk (Stability Metric: {float(predicted_stability[0][0]) * 100:.1f}%)")
 
 with col_viz:
     st.header("Interactive Flight Path Projection")
@@ -70,7 +82,7 @@ with col_viz:
     atmo_x = R_ATMOSPHERE_KM * np.cos(theta)
     atmo_y = R_ATMOSPHERE_KM * np.sin(theta)
     
-    # Bound map sizing constraints
+    # Render graphic limits smoothly without window formatting collapses
     apo_radius_km = min(30000.0, pred_apo) + R_EARTH_KM
     peri_radius_km = min(30000.0, pred_peri) + R_EARTH_KM
     
