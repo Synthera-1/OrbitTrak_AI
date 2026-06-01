@@ -11,17 +11,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS styling injection for an engineering dashboard look
-st.markdown("""
-    <style>
-    .main { background-color: #0b0f19; color: #ffffff; }
-    .stSlider { padding-top: 10px; padding-bottom: 10px; }
-    h1 { color: #00e5ff !important; font-family: 'Courier New', monospace; }
-    h2, h3 { color: #e0e0e0 !important; }
-    div[data-testid="stMetricValue"] { color: #00ff66 !important; font-family: 'Share Tech Mono', monospace; }
-    </style>
-""", unsafe_html=True)
-
 st.title("OrbitTrak AI: Neural Flight Computer & Trajectory Predictor")
 st.markdown("---")
 
@@ -63,6 +52,8 @@ with col_inputs:
     
     # Run predictions across regression and classification branches
     predictions = model.predict(scaled_vector, verbose=0)
+    
+    # Unpack based on multi-output architecture format
     predicted_heights = predictions[0][0]  
     predicted_stability = predictions[1][0][0]  
     
@@ -98,7 +89,7 @@ with col_viz:
     atmo_x = R_ATMOSPHERE_KM * np.cos(theta)
     atmo_y = R_ATMOSPHERE_KM * np.sin(theta)
     
-    # Map out the elliptical trajectory projection paths based on model telemetry heights
+    # Map out the elliptical trajectory paths based on model telemetry heights
     apo_radius_km = (pred_apo / 1000.0) + R_EARTH_KM
     peri_radius_km = (pred_peri / 1000.0) + R_EARTH_KM
     
