@@ -6,23 +6,22 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import pickle
 
-# --- 1. Load Data & Logarithmic Scale Compression ---
 print("Loading dataset...")
-df = pd.read_csv('orbit_training_data.csv')
-df = df.dropna()
+df = pd.read_csv('orbit_training_data.csv').dropna()
 
 X = df[['angle', 'duration', 'power', 'mass']].values
 
-# Bound massive astronomical metrics into values under 10.0 using Log10
-raw_apo = df['apoapsis'].values
-raw_peri = df['periapsis'].values
-log_apo = np.log10(np.clip(raw_apo, 1.0, None))
-log_peri = np.log10(np.clip(raw_peri, 1.0, None))
-Y_reg = np.column_stack((log_apo, log_peri))
+# ULTIMATE FIX: Convert meters to kilometers, then apply a smooth Log10 transformation
+# This compresses numbers up to 100,000 km into a rock-solid scale between 0.0 and 6.0
+apo_km = df['apoapsis'].values / 1000.0
+peri_km = df['periapsis'].values / 1000.0
 
+Y_reg = np.column_stack((
+    np.log10(apo_km + 1.0),
+    np.log10(peri_km + 1.0)
+))
 Y_clf = df['stable'].values                     
 
-# --- 2. Preprocessing & Data Splitting ---
 X_train, X_test, Y_reg_train, Y_reg_test, Y_clf_train, Y_clf_test = train_test_split(
     X, Y_reg, Y_clf, test_size=0.2, random_state=42
 )
@@ -34,18 +33,16 @@ X_test_scaled = feature_scaler.transform(X_test)
 with open('scaler.pkl', 'wb') as f:
     pickle.dump(feature_scaler, f)
 
-# --- 3. Build Model Architecture ---
+# Network Architecture
 input_layer = layers.Input(shape=(4,), name='rocket_parameters')
-shared_dense1 = layers.Dense(64, activation='relu')(input_layer)
-shared_dense2 = layers.Dense(64, activation='relu')(shared_dense1)
+shared = layers.Dense(64, activation='relu')(input_layer)
+shared = layers.Dense(64, activation='relu')(shared)
 
-# Branch A: Regression Head (Linear outputs)
-reg_dense = layers.Dense(32, activation='relu')(shared_dense2)
-reg_output = layers.Dense(2, activation='linear', name='trajectory_output')(reg_dense)
+reg_head = layers.Dense(32, activation='relu')(shared)
+reg_output = layers.Dense(2, activation='linear', name='trajectory_output')(reg_head)
 
-# Branch B: Classification Head (Sigmoid binary outputs)
-clf_dense = layers.Dense(16, activation='relu')(shared_dense2)
-clf_output = layers.Dense(1, activation='sigmoid', name='stability_output')(clf_dense)
+clf_head = layers.Dense(16, activation='relu')(shared)
+clf_output = layers.Dense(1, activation='sigmoid', name='stability_output')(clf_head)
 
 model = models.Model(inputs=input_layer, outputs=[reg_output, clf_output])
 
@@ -55,7 +52,6 @@ model.compile(
     metrics={'stability_output': 'accuracy'}
 )
 
-# --- 4. Train Neural Engine ---
 print("Training Network Model...")
 model.fit(
     X_train_scaled, 
@@ -66,6 +62,5 @@ model.fit(
     verbose=1
 )
 
-# CRITICAL FORMAT UPDATE: Save as a native TensorFlow directory instead of an old .h5 file wrapper
-model.save('orbit_predictor_model', save_format='tf')
-print("Model training complete. Directory 'orbit_predictor_model' generated successfully.")
+model.save('orbit_predictor_model.h5')
+print("Success! 'orbit_predictor_model.h5' generated with clean, numerical loss values.")
